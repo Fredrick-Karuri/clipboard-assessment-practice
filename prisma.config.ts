@@ -3,9 +3,9 @@ import { defineConfig } from '@prisma/config'
 
 export default defineConfig({
   datasource: {
-      url: 'file:./dev.db', // The URL goes here now
+      url: 'file:./dev.db',
   },
   migrations: {
-    path: './prisma/migrations',
+    path: 'prisma/migrations',
   },
 })
