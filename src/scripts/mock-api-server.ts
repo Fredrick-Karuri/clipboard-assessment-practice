@@ -42,6 +42,6 @@ const server = createServer((req:IncomingMessage, res:ServerResponse) => {
 });
 
 server.listen(3000, () =>{
-    console.log("Mock api server runnig on  http://localhost:3000")
+    console.log("Mock api server running on  http://localhost:3000")
     console.log("Try :http://localhost:3000/shifts?page=1")
 })
