@@ -1,3 +1,4 @@
+// src/scripts/fetch-scripts
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
@@ -22,54 +23,62 @@ interface ShiftResponse {
   };
 }
 
+// logic
+/*
+   1.Fetch the first page to know how many total pages exist
+   2.Loop through all pages
+   3.Transform api data to prisma format
+   4.Save to database
+   5.Add proper error handling
+  */
 async function fetchShifts() {
-  console.log("Starting fetching shifts ...");
-  // logic
-  /*
-     1.Fetch the first page to know how many total pages exist
-     2.Loop through all pages
-    */
-  const response = await fetch(`${API_URL}?page=1`);
-  const firstPage: ShiftResponse = (await response.json()) as ShiftResponse;
-  const totalPages = firstPage.pagination.total_pages;
+  try {
+    console.log("Starting fetching shifts ...");
+    const response = await fetch(`${API_URL}?page=1`);
+    const firstPage: ShiftResponse = (await response.json()) as ShiftResponse;
+    const totalPages = firstPage.pagination.total_pages;
 
-  console.log(`Total Pages ${firstPage.pagination.total_pages}`);
-  console.log(`Total items ${firstPage.pagination.total_items}`);
+    console.log(`Total Pages ${firstPage.pagination.total_pages}`);
+    console.log(`Total items ${firstPage.pagination.total_items}`);
 
-  let allShifts = [...firstPage.data];
+    let allShifts = [...firstPage.data];
 
-  for (let page = 2; page <= totalPages; page++) {
-    console.log(`Fetching page ${page}/${totalPages} ...`);
-    const response = await fetch(`${API_URL}?page=${page}`);
-    const pageData: ShiftResponse = (await response.json()) as ShiftResponse;
-    allShifts.push(...pageData.data);
+    for (let page = 2; page <= totalPages; page++) {
+      console.log(`Fetching page ${page}/${totalPages} ...`);
+      const response = await fetch(`${API_URL}?page=${page}`);
+      const pageData: ShiftResponse = (await response.json()) as ShiftResponse;
+      allShifts.push(...pageData.data);
+    }
+    console.log(`Fetched ${allShifts.length} shifts total `);
+
+    const transformedShifts = allShifts.map((shift) => ({
+      id: shift.id,
+      facilityId: shift.facility_id,
+      workerId: shift.worker_id as string,
+      startTime: shift.start_time,
+      endTime: shift.end_time,
+      profession: shift.profession,
+      isDeleted: shift.is_deleted,
+    }));
+    console.log("Transoformed data for database");
+
+    console.log("Saving to database");
+    const result = await prisma.$transaction(
+      transformedShifts.map((shift) =>
+        prisma.shift.upsert({
+          where: { id: shift.id },
+          update: shift,
+          create: shift,
+        })
+      )
+    );
+    console.log(`Processed ${result.length} shifts.`);
+
+    console.log("Fetch complete");
+  } catch (error) {
+    console.error("✗ Error during fetch:",error)
+    throw error
   }
-  console.log(`Fetched ${allShifts.length} shifts total `);
-
-  const transformedShifts = allShifts.map((shift) => ({
-    id: shift.id,
-    facilityId: shift.facility_id,
-    workerId: shift.worker_id as string,
-    startTime: shift.start_time,
-    endTime: shift.end_time,
-    profession: shift.profession,
-    isDeleted: shift.is_deleted,
-  }));
-  console.log("Transoformed data for database");
-
-  console.log("Saving to database");
-  const result = await prisma.$transaction(
-    transformedShifts.map((shift) =>
-      prisma.shift.upsert({
-        where: { id: shift.id },
-        update: shift,
-        create: shift,
-      })
-    )
-  );
-  console.log(`Processed ${result.length} shifts.`);
-
-  console.log("Fetch complete");
 }
 
 fetchShifts()
