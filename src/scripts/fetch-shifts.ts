@@ -1,89 +1,40 @@
 // src/scripts/fetch-scripts
 import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
+import { LoggerService } from "../services/logger.service.js";
+import { ShiftApiService } from "../services/shift-api.service.js";
+import { ShiftTransformerService } from "../services/shift-transformer.service.js";
+import { ShiftRepositoryService } from "../services/shift-repository.service.js";
 
 const API_URL = "http://localhost:3000/shifts";
+const prisma = new PrismaClient();
+const logger = new LoggerService();
+const apiService = new ShiftApiService(API_URL);
+const transformer = new ShiftTransformerService();
+const repository = new ShiftRepositoryService(prisma);
 
-interface Shift {
-  id: string;
-  facility_id: string;
-  worker_id?: string;
-  start_time: string;
-  end_time: string;
-  profession: "CNA" | "LVN" | "RN";
-  is_deleted: boolean;
-}
-
-interface ShiftResponse {
-  data: Shift[];
-  pagination: {
-    page: number;
-    total_pages: number;
-    total_items: number;
-  };
-}
-
-// logic
-/*
-   1.Fetch the first page to know how many total pages exist
-   2.Loop through all pages
-   3.Transform api data to prisma format
-   4.Save to database
-   5.Add proper error handling
-  */
 async function fetchShifts() {
   try {
-    console.log("Starting fetching shifts ...");
-    const response = await fetch(`${API_URL}?page=1`);
-    const firstPage: ShiftResponse = (await response.json()) as ShiftResponse;
-    const totalPages = firstPage.pagination.total_pages;
+    logger.log("Starting fetching shifts");
+    const shifts = await apiService.fetchAllShifts();
+    logger.log(`Fetched ${shifts.length} shifts total`);
 
-    console.log(`Total Pages ${firstPage.pagination.total_pages}`);
-    console.log(`Total items ${firstPage.pagination.total_items}`);
+    const transformed = transformer.transformMany(shifts);
+    logger.log("Transformed data for database");
 
-    let allShifts = [...firstPage.data];
+    logger.log("Saving to database");
+    const result = await repository.upsertMany(transformed);
+    logger.log(`Processed ${result.length} shifts`);
 
-    for (let page = 2; page <= totalPages; page++) {
-      console.log(`Fetching page ${page}/${totalPages} ...`);
-      const response = await fetch(`${API_URL}?page=${page}`);
-      const pageData: ShiftResponse = (await response.json()) as ShiftResponse;
-      allShifts.push(...pageData.data);
-    }
-    console.log(`Fetched ${allShifts.length} shifts total `);
-
-    const transformedShifts = allShifts.map((shift) => ({
-      id: shift.id,
-      facilityId: shift.facility_id,
-      workerId: shift.worker_id as string,
-      startTime: shift.start_time,
-      endTime: shift.end_time,
-      profession: shift.profession,
-      isDeleted: shift.is_deleted,
-    }));
-    console.log("Transoformed data for database");
-
-    console.log("Saving to database");
-    const result = await prisma.$transaction(
-      transformedShifts.map((shift) =>
-        prisma.shift.upsert({
-          where: { id: shift.id },
-          update: shift,
-          create: shift,
-        })
-      )
-    );
-    console.log(`Processed ${result.length} shifts.`);
-
-    console.log("Fetch complete");
+    logger.log("Fetch complete!");
   } catch (error) {
-    console.error("✗ Error during fetch:",error)
-    throw error
+    logger.error("✗ Error during fetch:", error);
+    throw error;
   }
 }
 
 fetchShifts()
   .catch((error) => {
-    console.error("Error:", error);
+    logger.error("Error:", error);
     process.exit(1);
   })
   .finally(async () => {
